@@ -7,20 +7,22 @@ import fs from 'fs';
 import { createYoga } from 'graphql-yoga';
 import { stitchSchemas } from '@graphql-tools/stitch';
 
+import { createProxyMiddleware } from 'http-proxy-middleware';
 import routes from './interfaces/routes';
 import cors from './lib/plugins/cors';
 import errorHandler from '@/middleware/errorHandler';
 import { getRemoteSchema } from '@infrastructure/cms/remote-schema';
 import { loggingMiddleware } from '@lib/plugins/logger';
 import { useDisableIntrospection } from '@graphql-yoga/plugin-disable-introspection';
+import { envParser } from '@lib/envParser';
+
+const { CMS_URL } = envParser;
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-
-
 
 // Logger to file
 app.use(
@@ -65,14 +67,28 @@ async function makeGatewayShema() {
   });
 }
 
-//GraphQL Yoga server
+app.use(
+  '/api/assets',
+  createProxyMiddleware({
+    target: CMS_URL,
+    changeOrigin: true,
+    secure: false,
+    pathRewrite: (path) => `/squidex/api/assets/dados-gov${path}`,
+  }),
+);
+
+// GraphQL Yoga server
+
 const yoga = createYoga({
   schema: makeGatewayShema(),
   graphqlEndpoint: '/graphql',
   logging: true,
-  graphiql: process.env.NODE_ENV === 'production' ? false : {
-    endpoint: '/graphql',
-  },
+  graphiql:
+    process.env.NODE_ENV === 'production'
+      ? false
+      : {
+          endpoint: '/graphql',
+        },
   plugins: [
     useDisableIntrospection({
       // Set production env to allow introspection for local development, and disable in prod
@@ -83,7 +99,6 @@ const yoga = createYoga({
 });
 
 app.use('/graphql', yoga);
-
 
 // 404 Handler
 app.use((req, res) => {
